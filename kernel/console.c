@@ -18,6 +18,7 @@
 static void consputc(int);
 
 static int panicked = 0;
+static int id = 1;
 
 static struct {
 	struct spinlock lock;
@@ -148,16 +149,42 @@ cgaputc(int c)
 		panic("pos under/overflow");
 
 	if((pos/80) >= 24){  // Scroll up.
+		consclearid();
 		memmove(crt, crt+80, sizeof(crt[0])*23*80);
 		pos -= 80;
 		memset(crt+pos, 0, sizeof(crt[0])*(24*80 - pos));
 	}
+
+	// Console identifier
+	consputid();
 
 	outb(CRTPORT, 14);
 	outb(CRTPORT+1, pos>>8);
 	outb(CRTPORT, 15);
 	outb(CRTPORT+1, pos);
 	crt[pos] = ' ' | 0x0700;
+}
+
+void
+consputid()
+{
+	if(id < 1 || id > 9)
+		panic("identifier not supported");
+
+	// 24 lines with 80 chars, 24 * 80 = 1920
+	crt[1915] = 't' | 0x0700;
+	crt[1916] = 't' | 0x0700;
+	crt[1917] = 'y' | 0x0700;
+	crt[1918] = ('0' + id) | 0x0700;
+}
+
+void
+consclearid()
+{
+	crt[1915] = ' ' | 0x0700;
+	crt[1916] = ' ' | 0x0700;
+	crt[1917] = ' ' | 0x0700;
+	crt[1918] = ' ' | 0x0700;
 }
 
 void
