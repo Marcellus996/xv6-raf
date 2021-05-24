@@ -6,9 +6,12 @@
 int
 kbdgetc(void)
 {
+	// Variable name is stupid, this is binary representation for (alt, ctrl, shift)
 	static uint shift;
-	static uchar *charcode[4] = {
-		normalmap, shiftmap, ctlmap, ctlmap
+	static uchar *charcode[8] = {
+		// ctrl > shift > alt
+		// 000        001      010      011    100      101      110    111
+		normalmap, shiftmap, ctlmap, ctlmap, altmap, shiftmap, ctlmap, ctlmap 
 	};
 	uint st, data, c;
 
@@ -18,6 +21,7 @@ kbdgetc(void)
 	data = inb(KBDATAP);
 
 	if(data == 0xE0){
+		// Clean up (E0ESC = 1000000)
 		shift |= E0ESC;
 		return 0;
 	} else if(data & 0x80){
@@ -33,7 +37,7 @@ kbdgetc(void)
 
 	shift |= shiftcode[data];
 	shift ^= togglecode[data];
-	c = charcode[shift & (CTL | SHIFT)][data];
+	c = charcode[shift & (CTL | SHIFT | ALT)][data];
 	if(shift & CAPSLOCK){
 		if('a' <= c && c <= 'z')
 			c += 'A' - 'a';

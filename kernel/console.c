@@ -212,6 +212,7 @@ struct {
 } input;
 
 #define C(x)  ((x)-'@')  // Control-x
+#define A(x)  ((x)+128)  // Alt-x
 
 void
 consoleintr(int (*getc)(void))
@@ -237,6 +238,10 @@ consoleintr(int (*getc)(void))
 				input.e--;
 				consputc(BACKSPACE);
 			}
+			break;
+		case A('1'): case A('2'): case A('3'): case A('4'): case A('5'): case A('6'):
+			id = c - A('1') + 1;
+			consputid();
 			break;
 		default:
 			if(c != 0 && input.e-input.r < INPUT_BUF){

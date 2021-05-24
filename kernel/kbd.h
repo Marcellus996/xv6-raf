@@ -30,6 +30,8 @@
 
 // C('A') == Control-A
 #define C(x) (x - '@')
+// Ignore extended ASCII
+#define A(x) (x + 128)
 
 static uchar shiftcode[256] =
 {
@@ -103,6 +105,24 @@ static uchar ctlmap[256] =
 	C('B'),  C('N'),  C('M'),  NO,      NO,      C('/'),  NO,      NO,
 	[0x9C] '\r',      // KP_Enter
 	[0xB5] C('/'),    // KP_Div
+	[0xC8] KEY_UP,    [0xD0] KEY_DN,
+	[0xC9] KEY_PGUP,  [0xD1] KEY_PGDN,
+	[0xCB] KEY_LF,    [0xCD] KEY_RT,
+	[0x97] KEY_HOME,  [0xCF] KEY_END,
+	[0xD2] KEY_INS,   [0xD3] KEY_DEL
+};
+
+static uchar altmap[256] =
+{
+	NO,      NO,      A('1'),  A('2'),  A('3'),  A('4'),  A('5'),  A('6'),
+	NO,      NO,      NO,      NO,      NO,      NO,      NO,      NO,
+	NO,      NO,      NO,      NO,      NO,      NO,      NO,      NO,
+	NO,      NO,      NO,      NO,      NO,      NO,      NO,      NO,
+	NO,      NO,      NO,      NO,      NO,      NO,      NO,      NO,
+	NO,      NO,      NO,      NO,      NO,      NO,      NO,      NO,
+	NO,      NO,      NO,      NO,      NO,      NO,      NO,      NO,
+	[0x9C] '\n',      // KP_Enter
+	[0xB5] '/',       // KP_Div
 	[0xC8] KEY_UP,    [0xD0] KEY_DN,
 	[0xC9] KEY_PGUP,  [0xD1] KEY_PGDN,
 	[0xCB] KEY_LF,    [0xCD] KEY_RT,
