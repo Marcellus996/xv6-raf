@@ -17,9 +17,9 @@ main(void)
 		exit();
 	}
 
-	if(open("/dev/console", O_RDWR) < 0){
-		mknod("/dev/console", 1, 1);
-		open("/dev/console", O_RDWR);
+	if(open("/dev/tty", O_RDWR) < 0){
+		mknod("/dev/tty", 1, 1);
+		open("/dev/tty", O_RDWR);
 	}
 	dup(0);  // stdout
 	dup(0);  // stderr
