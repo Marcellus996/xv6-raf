@@ -146,21 +146,43 @@ getcmd(char *buf, int nbuf)
 	return 0;
 }
 
+// LOL
+char* consolen(int c) {
+	if (c == 1) {
+		return "/dev/tty1";
+	} else if (c == 2) {
+		return "/dev/tty2";
+	} else if (c == 3) {
+		return "/dev/tty3";
+	} else if (c == 4) {
+		return "/dev/tty4";
+	} else if (c == 5) {
+		return "/dev/tty5";
+	} else if (c == 6) {
+		return "/dev/tty6";
+	}
+	return "";
+}
+
 int
 main(int argc, char *argv[])
 {
 	static char buf[100];
-	int fd;
+	int fd, consolec;
+	char* consolename;
 
-	if(open("/dev/tty", O_RDWR) < 0){
-		mknod("/dev/tty", 1, 1);
-		open("/dev/tty", O_RDWR);
+	consolec = atoi(argv[0]);
+	consolename = consolen(consolec);
+
+	if (open(consolename, O_RDWR) < 0){
+		mknod(consolename, consolec, consolec);
+		open(consolename, O_RDWR);
 	}
 	dup(0);  // stdout
 	dup(0);  // stderr
 
 	// Ensure that three file descriptors are open.
-	while((fd = open("/dev/tty", O_RDWR)) >= 0){
+	while((fd = open(consolename, O_RDWR)) >= 0){
 		if(fd >= 3){
 			close(fd);
 			break;

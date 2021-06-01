@@ -15,19 +15,24 @@
 #include "proc.h"
 #include "x86.h"
 
-static void consputc(int);
+static void consputc(int, int);
 
 static int panicked = 0;
-
-static int console_id = 1;
 
 static struct {
 	struct spinlock lock;
 	int locking;
 } cons;
 
+#define CONSOLE_CNT  6
+static struct {
+	int view[25*80];
+	int pos;
+} console[CONSOLE_CNT];
+static int active_console = 0;
+
 static void
-printint(int xx, int base, int sign)
+printint(int xx, int base, int sign, int cproc)
 {
 	static char digits[] = "0123456789abcdef";
 	char buf[16];
@@ -48,14 +53,14 @@ printint(int xx, int base, int sign)
 		buf[i++] = '-';
 
 	while(--i >= 0)
-		consputc(buf[i]);
+		consputc(buf[i], cproc);
 }
 
 // Print to the console. only understands %d, %x, %p, %s.
 void
 cprintf(char *fmt, ...)
 {
-	int i, c, locking;
+	int i, c, locking, cproc;
 	uint *argp;
 	char *s;
 
@@ -66,10 +71,12 @@ cprintf(char *fmt, ...)
 	if (fmt == 0)
 		panic("null fmt");
 
+	// This isn't nice, but we can't get active process with myproc here
+	cproc = active_console;
 	argp = (uint*)(void*)(&fmt + 1);
 	for(i = 0; (c = fmt[i] & 0xff) != 0; i++){
 		if(c != '%'){
-			consputc(c);
+			consputc(c, cproc);
 			continue;
 		}
 		c = fmt[++i] & 0xff;
@@ -77,25 +84,25 @@ cprintf(char *fmt, ...)
 			break;
 		switch(c){
 		case 'd':
-			printint(*argp++, 10, 1);
+			printint(*argp++, 10, 1, cproc);
 			break;
 		case 'x':
 		case 'p':
-			printint(*argp++, 16, 0);
+			printint(*argp++, 16, 0, cproc);
 			break;
 		case 's':
 			if((s = (char*)*argp++) == 0)
 				s = "(null)";
 			for(; *s; s++)
-				consputc(*s);
+				consputc(*s, cproc);
 			break;
 		case '%':
-			consputc('%');
+			consputc('%', cproc);
 			break;
 		default:
 			// Print unknown % sequence to draw attention.
-			consputc('%');
-			consputc(c);
+			consputc('%', cproc);
+			consputc(c, cproc);
 			break;
 		}
 	}
@@ -129,80 +136,106 @@ panic(char *s)
 static ushort *crt = (ushort*)P2V(0xb8000);  // CGA memory
 
 static void
-cgaputc(int c)
+crefresh()
 {
-	int pos;
-
-	// Cursor position: col + 80*row.
-	outb(CRTPORT, 14);
-	pos = inb(CRTPORT+1) << 8;
-	outb(CRTPORT, 15);
-	pos |= inb(CRTPORT+1);
-
-	if(c == '\n')
-		pos += 80 - pos%80;
-	else if(c == BACKSPACE){
-		if(pos > 0) --pos;
-	} else
-		crt[pos++] = (c&0xff) | 0x0700;  // black on white
-
-	if(pos < 0 || pos > 25*80)
-		panic("pos under/overflow");
-
-	if((pos/80) >= 24){  // Scroll up.
-		consclearid();
-		memmove(crt, crt+80, sizeof(crt[0])*23*80);
-		pos -= 80;
-		memset(crt+pos, 0, sizeof(crt[0])*(24*80 - pos));
+	int i;
+	for (i = 0; i < 24*80; i++) {
+		crt[i] = console[active_console].view[i];
 	}
 
-	// Console identifier
-	consputid();
-
-	outb(CRTPORT, 14);
-	outb(CRTPORT+1, pos>>8);
-	outb(CRTPORT, 15);
-	outb(CRTPORT+1, pos);
-	crt[pos] = ' ' | 0x0700;
-}
-
-static int debug_pos = 0;
-
-static void
-debugputc(int c)
-{
-	if(c == '\n')
-		debug_pos += 80 - debug_pos%80;
-	else if(c == BACKSPACE){
-		if(debug_pos > 0) --debug_pos;
-	} else
-		crt[debug_pos++] = (c&0xff) | 0x0700;  // black on white
-}
-
-void
-consputid()
-{
-	if(console_id < 1 || console_id > 9)
-		panic("identifier not supported");
-
-	// 24 lines with 80 chars, 24 * 80 = 1920
 	crt[1915] = 't' | 0x0700;
 	crt[1916] = 't' | 0x0700;
 	crt[1917] = 'y' | 0x0700;
-	crt[1918] = ('0' + console_id) | 0x0700;
+	crt[1918] = ('0' + active_console + 1) | 0x0700;
+
+	outb(CRTPORT, 14);
+	outb(CRTPORT+1, console[active_console].pos>>8);
+	outb(CRTPORT, 15);
+	outb(CRTPORT+1, console[active_console].pos);
 }
 
-void
-consclearid()
+static void
+cgaputc(int c, int cproc)
 {
-	crt[1915] = ' ' | 0x0700;
-	crt[1916] = ' ' | 0x0700;
-	crt[1917] = ' ' | 0x0700;
-	crt[1918] = ' ' | 0x0700;
+	// Get from CGA
+	// outb(CRTPORT, 14);
+	// pos = inb(CRTPORT+1) << 8;
+	// outb(CRTPORT, 15);
+	// pos |= inb(CRTPORT+1);
+	// console.pos = pos;
+
+	if(c == '\n') {
+		console[cproc].pos += 80 - console[cproc].pos%80;
+	}
+	else if(c == BACKSPACE){
+		if (console[cproc].pos > 0) {
+			console[cproc].pos--;
+		}
+	} else {
+		// crt[console.pos] = (c&0xff) | 0x0700;  // black on white
+		console[cproc].view[console[cproc].pos++] = (c&0xff) | 0x0700;  // black on white
+	}
+
+	if (console[cproc].pos < 0 || console[cproc].pos > 25*80)
+		panic("pos under/overflow");
+
+	if ((console[cproc].pos/80) >= 24){  // Scroll up.
+		memmove(console[cproc].view, console[cproc].view+80, sizeof(console[cproc].view[0])*23*80);
+		// memmove(crt, crt+80, sizeof(crt[0])*23*80);
+		console[cproc].pos -= 80;
+		memset(console[cproc].view+console[cproc].pos, 0, sizeof(console[cproc].view[0])*(24*80 - console[cproc].pos));
+		// memset(crt+console.pos, 0, sizeof(crt[0])*(24*80 - console.pos));
+	}
+
+	// outb(CRTPORT, 14);
+	// outb(CRTPORT+1, console.pos>>8);
+	// outb(CRTPORT, 15);
+	// outb(CRTPORT+1, console.pos);
+	// crt[console.pos] = ' ' | 0x0700;
+	console[cproc].view[console[cproc].pos] = ' ' | 0x0700;
+
+	// Only if active
+	if (active_console == cproc) {
+		crefresh();
+	}
 }
 
+// static int debug_pos = 0;
+// static void
+// debugputc(int c)
+// {
+// 	if(c == '\n')
+// 		debug_pos += 80 - debug_pos%80;
+// 	else if(c == BACKSPACE){
+// 		if(debug_pos > 0) --debug_pos;
+// 	} else
+// 		crt[debug_pos++] = (c&0xff) | 0x0700;  // black on white
+// }
+
+// void
+// consputid()
+// {
+// 	if(console_id < 1 || console_id > 9)
+// 		panic("identifier not supported");
+
+// 	// 24 lines with 80 chars, 24 * 80 = 1920
+// 	crt[1915] = 't' | 0x0700;
+// 	crt[1916] = 't' | 0x0700;
+// 	crt[1917] = 'y' | 0x0700;
+// 	crt[1918] = ('0' + console_id) | 0x0700;
+// }
+
+// void
+// consclearid()
+// {
+// 	crt[1915] = ' ' | 0x0700;
+// 	crt[1916] = ' ' | 0x0700;
+// 	crt[1917] = ' ' | 0x0700;
+// 	crt[1918] = ' ' | 0x0700;
+// }
+
 void
-consputc(int c)
+consputc(int c, int cproc)
 {
 	if(panicked){
 		cli();
@@ -214,7 +247,7 @@ consputc(int c)
 		uartputc('\b'); uartputc(' '); uartputc('\b');
 	} else
 		uartputc(c);
-	cgaputc(c);
+	cgaputc(c, cproc);
 }
 
 #define KEY_UP   0xE2
@@ -228,9 +261,8 @@ struct {
 	uint r;  // Read index
 	uint w;  // Write index
 	uint e;  // Edit index
-} input;
+} input[CONSOLE_CNT];
 
-// TODO #define CONSOLE_CNT 6
 #define HISTORY_CNT 8
 struct {
 	char present[INPUT_BUF];
@@ -242,100 +274,103 @@ struct {
 
 	int past_cnt;  // number of entries in past, limitted to HISTORY_CNT
 	int pt_past;  // -1 in present, otherwise [0, past_end)
-} history;
+} history[CONSOLE_CNT];
 
 void
 inithistory()
 {
-	int i;
-	history.present_len = 0;
-	for (i = 0; i < HISTORY_CNT; i++)
+	int i, j;
+	for (j = 0; j < CONSOLE_CNT; j++)
 	{
-		history.past_len[i] = 0;
+		history[j].present_len = 0;
+		for (i = 0; i < HISTORY_CNT; i++)
+		{
+			history[j].past_len[i] = 0;
+		}
+		history[j].past_cnt = 0;
+		history[j].pt_past = -1;
 	}
-	history.past_cnt = 0;
-	history.pt_past = -1;
 }
 
 void
-clear_line()
+clear_line(int c)
 {
-	while(input.e != input.w && input.buf[(input.e-1) % INPUT_BUF] != '\n'){
-		input.e--;
-		consputc(BACKSPACE);
+	while(input[c].e != input[c].w && input[c].buf[(input[c].e-1) % INPUT_BUF] != '\n'){
+		input[c].e--;
+		consputc(BACKSPACE, c);
 	}
 }
 
 void
-put_to_present()
+put_to_present(int c)
 {
 	int i, j;
 	// debugputc('#');
-	for (i = input.w, j = 0; i != input.e && input.buf[i] != '\n'; i = (i + 1) % INPUT_BUF, j++)
+	for (i = input[c].w, j = 0; i != input[c].e && input[c].buf[i] != '\n'; i = (i + 1) % INPUT_BUF, j++)
 	{
-		history.present[j] = input.buf[i];
+		history[c].present[j] = input[c].buf[i];
 		// debugputc(input.buf[i]);
 	}
 	// debugputc('#');
-	history.present_len = j;
+	history[c].present_len = j;
 }
 
 void
-put_from_history(int is_up)
+put_from_history(int c, int is_up)
 {
 	// debugputc('0' + history.pt_past);
 	int i;
-	char c;
+	char newc;
 
 	// 0 -> -1
 	// -1 -> 0
 	// x -> y
-	if (history.pt_past == -1 && is_up == 0)
+	if (history[c].pt_past == -1 && is_up == 0)
 	{
 		// Clear current
-		clear_line();
+		clear_line(c);
 		// Put new
-		for (i = 0; i < history.present_len; i++)
+		for (i = 0; i < history[c].present_len; i++)
 		{
-			c = history.present[i];
-			input.buf[input.e++ % INPUT_BUF] = c;
-			consputc(c);
+			newc = history[c].present[i];
+			input[c].buf[input[c].e++ % INPUT_BUF] = newc;
+			consputc(newc, c);
 		}
 	}
-	else if (history.pt_past == 0 && is_up == 1)
+	else if (history[c].pt_past == 0 && is_up == 1)
 	{
 		// Clear current
-		clear_line();
+		clear_line(c);
 		// Put new
-		for (i = 0; i < history.past_len[history.pt_past]; i++)
+		for (i = 0; i < history[c].past_len[history[c].pt_past]; i++)
 		{
-			c = history.past[history.pt_past][i];
-			input.buf[input.e++ % INPUT_BUF] = c;
-			consputc(c);
+			newc = history[c].past[history[c].pt_past][i];
+			input[c].buf[input[c].e++ % INPUT_BUF] = newc;
+			consputc(newc, active_console);
 		}
 	}
 	else
 	{
 		// Clear current
-		clear_line();
+		clear_line(c);
 		// Put new
-		for (i = 0; i < history.past_len[history.pt_past]; i++)
+		for (i = 0; i < history[c].past_len[history[c].pt_past]; i++)
 		{
-			c = history.past[history.pt_past][i];
-			input.buf[input.e++ % INPUT_BUF] = c;
-			consputc(c);
+			newc = history[c].past[history[c].pt_past][i];
+			input[c].buf[input[c].e++ % INPUT_BUF] = newc;
+			consputc(newc, c);
 		}
 	}
 }
 
 void
-put_to_history()
+put_to_history(int c)
 {
 	// debugputc('0' + history.pt_past);
 	int i, j;
 	
-	put_to_present();
-	if (history.present_len == 0 || history.present[0] == '\n') {
+	put_to_present(c);
+	if (history[c].present_len == 0 || history[c].present[0] == '\n') {
 		// Empty line, do not add to history
 		return;
 	}
@@ -345,24 +380,25 @@ put_to_history()
 	{
 		for (j = 0; j < INPUT_BUF; j++)
 		{
-			history.past[i][j] = history.past[i - 1][j];
+			history[c].past[i][j] = history[c].past[i - 1][j];
 		}
-		history.past_len[i] = history.past_len[i - 1];
+		history[c].past_len[i] = history[c].past_len[i - 1];
 	}
 
 	// Copy present
 	for (j = 0; j < INPUT_BUF; j++)
 	{
-		history.past[0][j] = history.present[j];
+		history[c].past[0][j] = history[c].present[j];
 	}
-	history.past_len[0] = history.present_len;
+	history[c].past_len[0] = history[c].present_len;
 
 	// Inc past counter
-	if (history.past_cnt < HISTORY_CNT) {
-		history.past_cnt++;
+	if (history[c].past_cnt < HISTORY_CNT) {
+		history[c].past_cnt++;
 	}
 }
 
+// Captures keyboard, always to active_console
 void
 consoleintr(int (*getc)(void))
 {
@@ -376,48 +412,48 @@ consoleintr(int (*getc)(void))
 			doprocdump = 1;
 			break;
 		case C('U'):  // Kill line.
-			clear_line();
+			clear_line(active_console);
 			break;
 		case C('H'): case '\x7f':  // Backspace
-			if(input.e != input.w){
-				input.e--;
-				consputc(BACKSPACE);
+			if(input[active_console].e != input[active_console].w){
+				input[active_console].e--;
+				consputc(BACKSPACE, active_console);
 			}
 			break;
 		case A('1'): case A('2'): case A('3'): case A('4'): case A('5'): case A('6'):
-			console_id = c - A('1') + 1;
-			consputid();
+			active_console = c - A('1');
+			crefresh();
 			break;
 		case KEY_UP:
 			// debugputc('u');
-			if (history.pt_past == -1) {
-				put_to_present();
+			if (history[active_console].pt_past == -1) {
+				put_to_present(active_console);
 			}
-			if (history.pt_past + 1 < history.past_cnt) {
-				history.pt_past++;
-				put_from_history(1);
+			if (history[active_console].pt_past + 1 < history[active_console].past_cnt) {
+				history[active_console].pt_past++;
+				put_from_history(active_console, 1);
 			}
 			break;
 		case KEY_DN:
 			// debugputc('d');
-			if (history.pt_past == -1) {
-				put_to_present();
+			if (history[active_console].pt_past == -1) {
+				put_to_present(active_console);
 			}
-			if (history.pt_past - 1 >= -1) {
-				history.pt_past--;
-				put_from_history(0);
+			if (history[active_console].pt_past - 1 >= -1) {
+				history[active_console].pt_past--;
+				put_from_history(active_console, 0);
 			}
 			break;
 		default:
-			if(c != 0 && input.e-input.r < INPUT_BUF){
+			if(c != 0 && input[active_console].e-input[active_console].r < INPUT_BUF){
 				c = (c == '\r') ? '\n' : c;  // convert \r to \n
-				input.buf[input.e++ % INPUT_BUF] = c;
-				history.pt_past = -1;  // Reset history pointer
-				consputc(c);
-				if(c == '\n' || c == C('D') || input.e == input.r+INPUT_BUF){
-					put_to_history();
-					input.w = input.e;
-					wakeup(&input.r);
+				input[active_console].buf[input[active_console].e++ % INPUT_BUF] = c;
+				history[active_console].pt_past = -1;  // Reset history pointer
+				consputc(c, active_console);
+				if(c == '\n' || c == C('D') || input[active_console].e == input[active_console].r+INPUT_BUF){
+					put_to_history(active_console);
+					input[active_console].w = input[active_console].e;
+					wakeup(&input[active_console].r);
 				}
 			}
 			break;
@@ -430,7 +466,7 @@ consoleintr(int (*getc)(void))
 }
 
 int
-consoleread(struct inode *ip, char *dst, int n)
+consoleread(int nconsole, struct inode *ip, char *dst, int n)
 {
 	uint target;
 	int c;
@@ -439,20 +475,20 @@ consoleread(struct inode *ip, char *dst, int n)
 	target = n;
 	acquire(&cons.lock);
 	while(n > 0){
-		while(input.r == input.w){
+		while(input[nconsole].r == input[nconsole].w){
 			if(myproc()->killed){
 				release(&cons.lock);
 				ilock(ip);
 				return -1;
 			}
-			sleep(&input.r, &cons.lock);
+			sleep(&input[nconsole].r, &cons.lock);
 		}
-		c = input.buf[input.r++ % INPUT_BUF];
+		c = input[nconsole].buf[input[nconsole].r++ % INPUT_BUF];
 		if(c == C('D')){  // EOF
 			if(n < target){
 				// Save ^D for next time, to make sure
 				// caller gets a 0-byte result.
-				input.r--;
+				input[nconsole].r--;
 			}
 			break;
 		}
@@ -468,30 +504,104 @@ consoleread(struct inode *ip, char *dst, int n)
 }
 
 int
-consolewrite(struct inode *ip, char *buf, int n)
+consolewrite(int nconsole, struct inode *ip, char *buf, int n)
 {
 	int i;
 
 	iunlock(ip);
 	acquire(&cons.lock);
 	for(i = 0; i < n; i++)
-		consputc(buf[i] & 0xff);
+		consputc(buf[i] & 0xff, nconsole);
 	release(&cons.lock);
 	ilock(ip);
 
 	return n;
 }
 
+
+// Can't think of a smarter way...
+int
+consoleread0(struct inode *ip, char *dst, int n)
+{
+	return consoleread(0, ip, dst, n);
+}
+int
+consoleread1(struct inode *ip, char *dst, int n)
+{
+	return consoleread(1, ip, dst, n);
+}
+int
+consoleread2(struct inode *ip, char *dst, int n)
+{
+	return consoleread(2, ip, dst, n);
+}
+int
+consoleread3(struct inode *ip, char *dst, int n)
+{
+	return consoleread(3, ip, dst, n);
+}
+int
+consoleread4(struct inode *ip, char *dst, int n)
+{
+	return consoleread(4, ip, dst, n);
+}
+int
+consoleread5(struct inode *ip, char *dst, int n)
+{
+	return consoleread(5, ip, dst, n);
+}
+
+int
+consolewrite0(struct inode *ip, char *buf, int n)
+{
+	return consolewrite(0, ip, buf, n);
+}
+int
+consolewrite1(struct inode *ip, char *buf, int n)
+{
+	return consolewrite(1, ip, buf, n);
+}
+int
+consolewrite2(struct inode *ip, char *buf, int n)
+{
+	return consolewrite(2, ip, buf, n);
+}
+int
+consolewrite3(struct inode *ip, char *buf, int n)
+{
+	return consolewrite(3, ip, buf, n);
+}
+int
+consolewrite4(struct inode *ip, char *buf, int n)
+{
+	return consolewrite(4, ip, buf, n);
+}
+int
+consolewrite5(struct inode *ip, char *buf, int n)
+{
+	return consolewrite(5, ip, buf, n);
+}
+
 void
 consoleinit(void)
 {
 	initlock(&cons.lock, "console");
-
-	devsw[CONSOLE].write = consolewrite;
-	devsw[CONSOLE].read = consoleread;
-	cons.locking = 1;
-
 	inithistory();
+
+	devsw[1].write = consolewrite0;
+	devsw[1].read = consoleread0;
+	devsw[2].write = consolewrite1;
+	devsw[2].read = consoleread1;
+	devsw[3].write = consolewrite2;
+	devsw[3].read = consoleread2;
+	devsw[4].write = consolewrite3;
+	devsw[4].read = consoleread3;
+	devsw[5].write = consolewrite4;
+	devsw[5].read = consoleread4;
+	devsw[6].write = consolewrite5;
+	devsw[6].read = consoleread5;
+
+	cons.locking = 1;
 
 	ioapicenable(IRQ_KBD, 0);
 }
