@@ -147,10 +147,17 @@ getcmd(char *buf, int nbuf)
 }
 
 int
-main(void)
+main(int argc, char *argv[])
 {
 	static char buf[100];
 	int fd;
+
+	if(open("/dev/tty", O_RDWR) < 0){
+		mknod("/dev/tty", 1, 1);
+		open("/dev/tty", O_RDWR);
+	}
+	dup(0);  // stdout
+	dup(0);  // stderr
 
 	// Ensure that three file descriptors are open.
 	while((fd = open("/dev/tty", O_RDWR)) >= 0){

@@ -5,7 +5,7 @@
 #include "user.h"
 #include "kernel/fcntl.h"
 
-char *argv[] = { "sh", 0 };
+char *argv[] = { "1", 0 };
 
 int
 main(void)
@@ -16,13 +16,6 @@ main(void)
 		fprintf(2, "init: already running\n");
 		exit();
 	}
-
-	if(open("/dev/tty", O_RDWR) < 0){
-		mknod("/dev/tty", 1, 1);
-		open("/dev/tty", O_RDWR);
-	}
-	dup(0);  // stdout
-	dup(0);  // stderr
 
 	for(;;){
 		printf("init: starting sh\n");
