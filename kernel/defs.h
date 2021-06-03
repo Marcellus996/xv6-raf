@@ -184,6 +184,17 @@ void            switchuvm(struct proc*);
 void            switchkvm(void);
 int             copyout(pde_t*, uint, void*, uint);
 void            clearpteu(pde_t *pgdir, char *uva);
+int             mappages(pde_t*, void*, uint, uint, int);
+void            unmappages(pde_t*, const void*);
+
+// shm.c
+void            shminit(void);
+int             shm_open(char*);
+int             shm_trunc(int, int);
+int             shm_map(int, void**, int);
+int             shm_close(int);
+int             shm_fork(struct proc*, struct proc*);
+void            shm_exit(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

@@ -202,6 +202,11 @@ fork(void)
 	np->parent = curproc;
 	*np->tf = *curproc->tf;
 
+	// Shared memory
+	if (shm_fork(np, curproc) < 0) {
+		return -1;
+	}
+
 	// Transfer console
 	np->cid = 0;
 
@@ -246,6 +251,9 @@ exit(void)
 			curproc->ofile[fd] = 0;
 		}
 	}
+
+	// Shared memory
+	shm_exit();
 
 	begin_op();
 	iput(curproc->cwd);

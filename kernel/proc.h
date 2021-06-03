@@ -49,6 +49,9 @@ struct proc {
 	struct file *ofile[NOFILE];  // Open files
 	struct inode *cwd;           // Current directory
 	char name[16];               // Process name (debugging)
+	char shm[SHMOBJ];            // If non-zero, shared memory object is used by this process
+    char shm_mapped[SHMOBJ];     // If non-zero, shared memory object is mapped
+	int shm_flags[SHMOBJ];       // If mapped, shared memory object is mapped with these flags
 };
 
 // Process memory is laid out contiguously, low addresses first:

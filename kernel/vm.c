@@ -57,7 +57,7 @@ walkpgdir(pde_t *pgdir, const void *va, int alloc)
 // Create PTEs for virtual addresses starting at va that refer to
 // physical addresses starting at pa. va and size might not
 // be page-aligned.
-static int
+int
 mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
 {
 	char *a, *last;
@@ -77,6 +77,14 @@ mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
 		pa += PGSIZE;
 	}
 	return 0;
+}
+
+// Removes mapped page from PTE.
+void
+unmappages(pde_t *pgdir, const void *va)
+{
+	pte_t* pte = walkpgdir(pgdir, va, 0);
+	*pte = 0;
 }
 
 // There is one page table per process, plus one that's used when
@@ -317,7 +325,7 @@ copyuvm(pde_t *pgdir, uint sz)
 {
 	pde_t *d;
 	pte_t *pte;
-	uint pa, i, flags;
+	uint pa, i, j, flags;
 	char *mem;
 
 	if((d = setupkvm()) == 0)
@@ -339,6 +347,19 @@ copyuvm(pde_t *pgdir, uint sz)
 	}
 	return d;
 
+	for (i = SHMSTART, j = 0; i < KERNBASE; i += SHMPGS * PGSIZE, j++) {
+		if (myproc()->shm_mapped[j] != 0) {
+			// mapped
+			if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
+				panic("copyuvm: pte should exist");
+			if(!(*pte & PTE_P))
+				panic("copyuvm: page not present");
+			pa = PTE_ADDR(*pte);
+			flags = PTE_FLAGS(*pte);
+			if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0)
+		goto bad;
+		}
+	}
 bad:
 	freevm(d);
 	return 0;

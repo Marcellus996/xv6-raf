@@ -23,6 +23,10 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+int shm_open(char*);
+int shm_trunc(int, int);
+int shm_map(int, void**, int);
+int shm_close(int);
 
 // ulib.c
 int stat(const char*, struct stat*);

@@ -89,3 +89,42 @@ sys_uptime(void)
 	release(&tickslock);
 	return xticks;
 }
+
+int
+sys_shm_open(void)
+{
+	char *name;
+	if(argstr(0, &name) < 0){
+		return -1;
+	}
+	return shm_open(name);
+}
+
+int sys_shm_trunc(void)
+{
+	int i, j;
+	if(argint(0, &i) < 0 || argint(1, &j) < 0){
+		return -1;
+	}
+	return shm_trunc(i, j);
+}
+
+int sys_shm_map(void)
+{
+	int i, j;
+	void** p;
+	void* temp;
+	if(argint(0, &i) < 0 || argptr(1, &p, sizeof(temp)) < 0 || argint(2, &j) < 0){
+		return -1;
+	}
+	return shm_map(i, (void**) p, j);
+}
+
+int sys_shm_close(void)
+{
+	int i;
+	if(argint(0, &i) < 0){
+		return -1;
+	}
+	return shm_close(i);
+}
