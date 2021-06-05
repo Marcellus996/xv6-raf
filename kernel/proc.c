@@ -72,7 +72,7 @@ myproc(void)
 // state required to run in the kernel.
 // Otherwise return 0.
 static struct proc*
-allocproc(void)
+ allocproc(void)
 {
 	struct proc *p;
 	char *sp;
@@ -112,6 +112,8 @@ found:
 	p->context = (struct context*)sp;
 	memset(p->context, 0, sizeof *p->context);
 	p->context->eip = (uint)forkret;
+
+	p->cid = 0;
 
 	return p;
 }
@@ -200,6 +202,14 @@ fork(void)
 	np->parent = curproc;
 	*np->tf = *curproc->tf;
 
+	// Shared memory
+	if (shm_fork(np, curproc) < 0) {
+		return -1;
+	}
+
+	// Transfer console
+	np->cid = 0;
+
 	// Clear %eax so that fork returns 0 in the child.
 	np->tf->eax = 0;
 
@@ -241,6 +251,9 @@ exit(void)
 			curproc->ofile[fd] = 0;
 		}
 	}
+
+	// Shared memory
+	shm_exit();
 
 	begin_op();
 	iput(curproc->cwd);
@@ -294,6 +307,7 @@ wait(void)
 				p->parent = 0;
 				p->name[0] = 0;
 				p->killed = 0;
+				p->cid = 0;
 				p->state = UNUSED;
 				release(&ptable.lock);
 				return pid;
@@ -529,7 +543,7 @@ procdump(void)
 			state = states[p->state];
 		else
 			state = "???";
-		cprintf("%d %s %s", p->pid, state, p->name);
+		cprintf("%d %d %s %s", p->pid, p->cid, state, p->name);
 		if(p->state == SLEEPING){
 			getcallerpcs((uint*)p->context->ebp+2, pc);
 			for(i=0; i<10 && pc[i] != 0; i++)

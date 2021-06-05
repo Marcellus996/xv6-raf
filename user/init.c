@@ -5,7 +5,12 @@
 #include "user.h"
 #include "kernel/fcntl.h"
 
-char *argv[] = { "sh", 0 };
+char *argv1[] = { "1", 0 };
+char *argv2[] = { "2", 0 };
+char *argv3[] = { "3", 0 };
+char *argv4[] = { "4", 0 };
+char *argv5[] = { "5", 0 };
+char *argv6[] = { "6", 0 };
 
 int
 main(void)
@@ -17,25 +22,75 @@ main(void)
 		exit();
 	}
 
-	if(open("/dev/console", O_RDWR) < 0){
-		mknod("/dev/console", 1, 1);
-		open("/dev/console", O_RDWR);
-	}
-	dup(0);  // stdout
-	dup(0);  // stderr
-
 	for(;;){
 		printf("init: starting sh\n");
+		
 		pid = fork();
 		if(pid < 0){
 			printf("init: fork failed\n");
 			exit();
 		}
 		if(pid == 0){
-			exec("/bin/sh", argv);
+			exec("/bin/sh", argv1);
 			printf("init: exec sh failed\n");
 			exit();
 		}
+
+		pid = fork();
+		if(pid < 0){
+			printf("init: fork failed\n");
+			exit();
+		}
+		if(pid == 0){
+			exec("/bin/sh", argv2);
+			printf("init: exec sh failed\n");
+			exit();
+		}
+
+		pid = fork();
+		if(pid < 0){
+			printf("init: fork failed\n");
+			exit();
+		}
+		if(pid == 0){
+			exec("/bin/sh", argv3);
+			printf("init: exec sh failed\n");
+			exit();
+		}
+
+		pid = fork();
+		if(pid < 0){
+			printf("init: fork failed\n");
+			exit();
+		}
+		if(pid == 0){
+			exec("/bin/sh", argv4);
+			printf("init: exec sh failed\n");
+			exit();
+		}
+
+		pid = fork();
+		if(pid < 0){
+			printf("init: fork failed\n");
+			exit();
+		}
+		if(pid == 0){
+			exec("/bin/sh", argv5);
+			printf("init: exec sh failed\n");
+			exit();
+		}
+
+		pid = fork();
+		if(pid < 0){
+			printf("init: fork failed\n");
+			exit();
+		}
+		if(pid == 0){
+			exec("/bin/sh", argv6);
+			printf("init: exec sh failed\n");
+			exit();
+		}
+
 		while((wpid=wait()) >= 0 && wpid != pid)
 			printf("zombie!\n");
 	}
