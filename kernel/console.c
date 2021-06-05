@@ -142,7 +142,7 @@ crefresh()
 	for (i = 0; i < 24*80; i++) {
 		crt[i] = console[active_console].view[i];
 	}
-
+	
 	crt[1915] = 't' | 0x0700;
 	crt[1916] = 't' | 0x0700;
 	crt[1917] = 'y' | 0x0700;

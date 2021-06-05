@@ -189,6 +189,8 @@ main(int argc, char *argv[])
 		}
 	}
 
+	fprintf(2, "starting sh on /dev/tty%d\n", consolec);
+
 	// Read and run input commands.
 	while(getcmd(buf, sizeof(buf)) >= 0){
 		if(buf[0] == 'c' && buf[1] == 'd' && buf[2] == ' '){
